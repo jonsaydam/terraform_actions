@@ -72,7 +72,7 @@ runs:
 
         if [ "$WORKSPACE_ID" = "null" ]; then
           echo ""
-          log_fatal "Workspace not exist"
+          echo "Workspace not exist"
           exit 1
         else
           echo ""
@@ -104,14 +104,14 @@ runs:
           current_state_objects=$(echo "$current_state_output" | jq '.')
 
         else
-          log_warning "No current state"
+          echo "No current state"
         fi
 
         if [ ! -z "$current_state_objects" ]; then
           echo "Current State Objects:"
           echo $current_state_objects | jq
         else
-          log_warning "There is no VM output in the previous state"
+          echo "There is no VM output in the previous state"
         fi
 
 
@@ -201,32 +201,32 @@ runs:
 
           elif [[ "$run_status" == "errored" ]]; then
             echo "OUTPUT1_MESSAGE=Plan errored" >> $GITHUB_OUTPUT
-            log_warning "Plan errored, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
+            echo "Plan errored, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
             save_plan="true"
             continue=0
             exit 1
 
           elif [[ "$run_status" == "planned_and_finished" ]]; then
             echo "OUTPUT1_MESSAGE=Plan indicates no changes to apply." >> $GITHUB_OUTPUT
-            log_warning "Plan indicates no changes to apply."
+            echo "Plan indicates no changes to apply."
             save_plan="true"
             continue=0
 
           elif [[ "run_status" == "canceled" ]]; then
             echo "OUTPUT1_MESSAGE=The run was canceled." >> $GITHUB_OUTPUT
-            log_warning "The run was canceled, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
+            echo "The run was canceled, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
             continue=0
             exit 1
 
           elif [[ "run_status" == "force_canceled" ]]; then
             echo "OUTPUT1_MESSAGE=The run was canceled forcefully." >> $GITHUB_OUTPUT
-            log_warning "The run was canceled forcefully,Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
+            echo "The run was canceled forcefully,Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
             continue=0
             exit 1
 
           elif [[ "run_status" == "discarded" ]]; then
             echo "OUTPUT1_MESSAGE=The run was discarded." >> $GITHUB_OUTPUT
-            log_warning "The run was discarded, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
+            echo "The run was discarded, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
             continue=0
             exit 1
           else
@@ -267,11 +267,11 @@ runs:
               echo "OUTPUT1_MESSAGE=Apply completed successfully. Check the run in Terraform Enterprise UI to review run results." >> $GITHUB_OUTPUT
               continue=0
             elif [[ "$apply_status" == "errored" ]]; then
-              log_fatal "Apply errored, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
+              echo "Apply errored, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
               continue=0
               exit 1
             elif [[ "$apply_status" == "canceled" ]]; then
-              log_fatal "Apply was canceled, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
+              echo "Apply was canceled, Check the Run at ${{ steps.plan.outputs.TFE_RUN_URL }}"
               continue=0
               exit 1
             else
@@ -348,7 +348,7 @@ runs:
           echo "Current State Objects:"
           echo $current_state_objects | jq
         else
-          log_warning "There is no output in the previous state"
+          echo "There is no output in the previous state"
         fi
         
         if  [ ${{ steps.status.outputs.NEW_STATE_VERSION }} != null ]; then
@@ -368,7 +368,7 @@ runs:
             echo "New State Objects:"
             echo $new_state_objects | jq
           else
-            log_warning "There is no output in the new state"
+            echo "There is no output in the new state"
             new_state_objects=[]
           fi
         else
@@ -397,7 +397,7 @@ runs:
         #   echo DELTA_STATE_OBJECTS=$delta_state_objects >> $GITHUB_OUTPUT
           
         # else
-        #   log_warning "There is no delta output for VM in the new state"
+        #   echo "There is no delta output for VM in the new state"
         #   delta_state_objects_num=0
         # fi
 
