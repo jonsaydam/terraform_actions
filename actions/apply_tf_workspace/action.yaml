@@ -47,12 +47,13 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v3
+#     - uses: actions/checkout@v3
 
     - name: Configuration File upload
       shell: 'bash -ileo pipefail {0}'
       id: upload
       run: |
+        pwd
         cd ${{ inputs.BUILD_FOLDER }}
         ls -lrt
         tar -zcvf content.tar.gz *
@@ -347,7 +348,7 @@ runs:
           log_info "Current State Objects:"
           echo $current_state_objects | jq
         else
-          log_warning "There is no VM output in the previous state"
+          log_warning "There is no output in the previous state"
         fi
         
         if  [ ${{ steps.status.outputs.NEW_STATE_VERSION }} != null ]; then
@@ -367,7 +368,7 @@ runs:
             log_info "New State Objects:"
             echo $new_state_objects | jq
           else
-            log_warning "There is no output for VM in the new state"
+            log_warning "There is no output in the new state"
             new_state_objects=[]
           fi
         else
@@ -375,30 +376,32 @@ runs:
           new_state_objects=$current_state_objects
         fi
 
-        ### Delta State Output Objects ###
-        if [ -n "$current_state_objects" ]; then
+        echo $new_state_objects > terraform_output.json
+        cat terraform_output.json
+        # ### Delta State Output Objects ###
+        # if [ -n "$current_state_objects" ]; then
           
-          log_info "Finding Delta Output Objects"
-          delta_state_objects=$(jq -n --argjson current "$current_state_objects" --argjson new "$new_state_objects" '
-            $new | map(select(. as $n | $current | any(.name == $n.name and .pip == $n.pip and .["private-ip"] == $n["private-ip"]) | not))
-          ')
-        else
-          log_info "There was no previous output objects. Delta Output Objects are new output objects"
-          delta_state_objects=$new_state_objects
-        fi
+        #   log_info "Finding Delta Output Objects"
+        #   delta_state_objects=$(jq -n --argjson current "$current_state_objects" --argjson new "$new_state_objects" '
+        #     $new | map(select(. as $n | $current | any(.name == $n.name and .pip == $n.pip and .["private-ip"] == $n["private-ip"]) | not))
+        #   ')
+        # else
+        #   log_info "There was no previous output objects. Delta Output Objects are new output objects"
+        #   delta_state_objects=$new_state_objects
+        # fi
 
-        if [ ! -z "$delta_state_objects" ]; then
-          log_info "Delta State Objects:"
-          echo "$delta_state_objects" | jq
-          delta_state_objects_num=$(echo "$delta_state_objects" | jq 'length')
-          echo DELTA_STATE_OBJECTS=$delta_state_objects >> $GITHUB_OUTPUT
+        # if [ ! -z "$delta_state_objects" ]; then
+        #   log_info "Delta State Objects:"
+        #   echo "$delta_state_objects" | jq
+        #   delta_state_objects_num=$(echo "$delta_state_objects" | jq 'length')
+        #   echo DELTA_STATE_OBJECTS=$delta_state_objects >> $GITHUB_OUTPUT
           
-        else
-          log_warning "There is no delta output for VM in the new state"
-          delta_state_objects_num=0
-        fi
+        # else
+        #   log_warning "There is no delta output for VM in the new state"
+        #   delta_state_objects_num=0
+        # fi
 
-        echo DELTA_STATE_OBJECTS_NUM=$delta_state_objects_num >> $GITHUB_OUTPUT
-        log_info "Number of VM created: $delta_state_objects_num"
+        # echo DELTA_STATE_OBJECTS_NUM=$delta_state_objects_num >> $GITHUB_OUTPUT
+        # log_info "Number of VM created: $delta_state_objects_num"
 
 
