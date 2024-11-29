@@ -1,0 +1,200 @@
+name: Terraform speculative plan via API
+description: Speculative plan for the TF code from workfolder input
+inputs:
+  TF_WORKSPACE:
+    required: true
+    description: The workspace name that the resources will be destroyed
+  TF_ORGANIZATION:
+    required:  true
+    description: Organization name on Terraform Enterprise
+  TF_API_TOKEN:
+    required: true
+    description: TOKEN to authenticate to Terraform Enterprise
+  TF_HOSTNAME:
+    required: true
+    description: Terraform Enterprise Hostname
+  BUILD_FOLDER:
+    required: true
+    description: Folders that has the terraform code
+  TF_RUN_CODE:
+    required: true
+    description: The description that shows on the TFE Run
+outputs:
+  WORKSPACE_ID:
+    description: Terraform Enterprise Workspace ID
+    value: ${{ steps.plan.outputs.WORKSPACE_ID }}
+  RUN_ID:
+    description: Terraform Enterprise Workspace Run ID
+    value: ${{ steps.plan.outputs.RUN_ID }}
+  TFE_RUN_URL:
+    description: Terraform Enterprise Run URL
+    value: ${{ steps.plan.outputs.TFE_RUN_URL }}
+  OUTPUT1_MESSAGE:
+    description: Terraform Enterprise STATUS Message 01
+    value: ${{ steps.status.outputs.OUTPUT1_MESSAGE }}
+  OUTPUT2_MESSAGE:
+    description: Terraform Enterprise STATUS Message 02
+    value: ${{ steps.status.outputs.OUTPUT2_MESSAGE }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v3
+
+    - name: Configuration File upload
+      if: ${{ contains(inputs.BUILD_FOLDER, 'terraform') }}
+      shell: 'bash -ileo pipefail {0}'
+      id: upload
+      run: |
+        cd ${{ inputs.BUILD_FOLDER }}
+        ls -lrt
+        tar -zcvf content.tar.gz *
+
+    - name: Identify workspace ID
+      if: ${{ contains(inputs.BUILD_FOLDER, 'terraform') }}
+      shell: 'bash -ileo pipefail {0}'
+      id: plan
+      run: |
+        log_info "Listing files in BUILD FOLDER"
+        cd ${{ inputs.BUILD_FOLDER }}
+        ls -lrt
+
+        WORKSPACE_ID=($(curl \
+        --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN}}" \
+        --header "Content-Type: application/vnd.api+json" \
+        https://${{ env.TF_HOSTNAME }}/api/v2/organizations/${{ inputs.TF_ORGANIZATION }}/workspaces/${{ inputs.TF_WORKSPACE }} \
+        | jq -r '.data.id'))
+
+        if [ "$WORKSPACE_ID" = "null" ]; then
+          log_info ""
+          log_fatal "Workspace not exist"
+          exit 1
+        else
+          log_info ""
+          log_info "Workspace Found!"
+          log_info "Workspace Name: ${{ inputs.TF_WORKSPACE }}"
+          log_info "Workspace ID: $WORKSPACE_ID"
+        fi
+
+        echo '{ "data": { "type": "configuration-versions", "attributes": { "speculative": true  }}}' > configversion.json
+        # Create configuration version
+        log_info ""
+        log_info "Creating configuration version."
+        configuration_version_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN}}" \
+        --header "Content-Type: application/vnd.api+json" --data @configversion.json "https://${{ inputs.TF_HOSTNAME }}/api/v2/workspaces/${WORKSPACE_ID}/configuration-versions")
+
+        # Parse configuration_version_id and upload_url
+        config_version_id=$(echo $configuration_version_result | jq -r '.data.id')
+        upload_url=$(echo $configuration_version_result | jq -r '.data.attributes."upload-url"')
+        log_info ""
+        log_info "Config Version ID: " $config_version_id
+        log_info "Upload URL: " $upload_url
+
+        # Write out run.template.json
+        echo '{ "data": { "attributes": { "message": "Speculative plan for ${{ inputs.TF_RUN_CODE }}", "plan_only": true }, "type": "runs", "relationships": { "workspace": { "data": { "type": "workspaces", "id": "workspace_id" }}, "configuration-version": { "data": { "type": "configuration-versions", "id": "configuration_id" }}}}}' > run.template.json
+
+        # Upload configuration
+        log_info ""
+        log_info "Uploading configuration version using content.tar.gz"
+        curl -s --header "Content-Type: application/octet-stream" --request PUT --data-binary @"content.tar.gz" "$upload_url"
+
+        # Do a run
+        sed "s/workspace_id/$WORKSPACE_ID/g; s/configuration_id/$config_version_id/g" < run.template.json  > run.json
+        run_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN }}" --header "Content-Type: application/vnd.api+json" --data @run.json https://${{ inputs.TF_HOSTNAME }}/api/v2/runs)
+
+        # Parse run_result
+        run_id=$(echo $run_result | jq -r '.data.id')
+        log_info ""
+        log_info "Run ID: $run_id"
+        echo "RUN_ID=$run_id" >> $GITHUB_OUTPUT
+        echo "TFE_RUN_URL=https://${{ inputs.TF_HOSTNAME }}/app/${{ inputs.TF_ORGANIZATION }}/workspaces/${{ inputs.TF_WORKSPACE }}/runs/${run_id}" >> $GITHUB_OUTPUT
+        log_info "TFE_RUN_URL: https://${{ inputs.TF_HOSTNAME }}/app/${{ inputs.TF_ORGANIZATION }}/workspaces/${{ inputs.TF_WORKSPACE }}/runs/${run_id}"
+
+    - name: Check Run Status
+      id: status
+      if: ${{ contains(inputs.BUILD_FOLDER, 'terraform') }}
+      shell: 'bash -ileo pipefail {0}'
+      run: |
+        # Check run result in loop
+        continue=1
+        while [ $continue -ne 0 ]; do
+          # Sleep
+          sleep 30
+          log_info ""
+          log_info "Checking run status"
+          # Check the status of run
+          check_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN }}" --header "Content-Type: application/vnd.api+json" https://${{ inputs.TF_HOSTNAME }}/api/v2/runs/${{ steps.plan.outputs.RUN_ID}})
+          # Parse out the run status and is-confirmable
+          run_status=$(echo $check_result | jq -r '.data.attributes.status')
+          log_info "Run Status: " $run_status
+
+          # Save plan log in some cases
+          save_plan="false"
+
+          # Apply in some cases
+          applied="false"
+
+          if [[ "$run_status" == "planned_and_finished" ]] ; then
+            continue=0
+            echo "OUTPUT1_MESSAGE=Check the run in Terraform Enterprise UI to review speculative run results." >> $GITHUB_OUTPUT
+            echo "STATUS=success" >> $GITHUB_OUTPUT
+            log_info "Check the run in Terraform Enterprise UI to review speculative run results."
+            save_plan="true"
+          elif [[ "$run_status" == "errored" ]]; then
+            echo "OUTPUT1_MESSAGE=Plan errored or hard-mandatory policy failed" >> $GITHUB_OUTPUT
+            echo "STATUS=fail" >> $GITHUB_OUTPUT
+            log_warning "Plan errored or hard-mandatory policy failed"
+            save_plan="true"
+            continue=0
+          elif [[ "$run_status" == "canceled" ]]; then
+            echo "OUTPUT1_MESSAGE=The run was canceled." >> $GITHUB_OUTPUT
+            echo "STATUS=fail" >> $GITHUB_OUTPUT
+            log_warning "The run was canceled."
+            continue=0
+          elif [[ "$run_status" == "force_canceled" ]]; then
+            echo "OUTPUT1_MESSAGE=The run was canceled forcefully." >> $GITHUB_OUTPUT
+            echo "STATUS=fail" >> $GITHUB_OUTPUT
+            log_warning "The run was canceled forcefully."
+            continue=0
+          elif [[ "$run_status" == "discarded" ]]; then
+            echo "OUTPUT1_MESSAGE=The run was discarded." >> $GITHUB_OUTPUT
+            echo "STATUS=fail" >> $GITHUB_OUTPUT
+            log_warning "The run was discarded."
+            continue=0
+          else
+
+          # Sleep and then check status again in next loop
+            echo "We will sleep and try again soon."
+          fi
+        done
+
+        # Get the plan log if $save_plan is true
+        if [[ "$save_plan" == "true" ]]; then
+          log_info ""
+          log_info "Getting the result of the Terraform Plan."
+          plan_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN }}" --header "Content-Type: application/vnd.api+json" https://${{ inputs.TF_HOSTNAME }}/api/v2/runs/${{ steps.plan.outputs.RUN_ID }}?include=plan)
+          plan_log_url=$(echo $plan_result | jq -r '.included[0].attributes."log-read-url"')
+          echo $plan_log_url
+          log_info ""
+          log_info "Plan Log:"
+          # Retrieve Plan Log from the URL and output to shell and file
+          curl -s $plan_log_url | tee ${run_id}.log
+          # log_debug $(cat ${run_id}.log)
+          resource_addition=$(echo $plan_result | jq -r '.included[0].attributes."resource-additions"')
+          resource_changes=$(echo $plan_result | jq -r '.included[0].attributes."resource-changes"')
+          resource_destructions=$(echo $plan_result | jq -r '.included[0].attributes."resource-destructions"')
+          echo "OUTPUT2_MESSAGE=Plan: $resource_addition to add, $resource_changes to change, $resource_destructions to destroy."  >> $GITHUB_OUTPUT
+          log_info "Plan: $resource_addition to add, $resource_changes to change, $resource_destructions to destroy."
+        fi
+
+    - name: Exit
+      if: ${{ contains(inputs.BUILD_FOLDER, 'terraform') }}
+      shell: 'bash -ileo pipefail {0}'
+      run: |
+        if [[ "${{ steps.status.outputs.STATUS }}" == "success" ]]; then
+          log_info "Action completed successfully."
+          exit 0
+        elif [[ "${{ steps.status.outputs.STATUS }}" == "fail" ]]; then
+          log_fatal "Action failed. TFE_URL: ${{ steps.plan.outputs.TFE_RUN_URL }}"
+          exit 1
+        fi
