@@ -39,10 +39,9 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v3
+#     - uses: actions/checkout@v3
 
     - name: Configuration File upload
-      if: ${{ contains(inputs.BUILD_FOLDER, 'terraform') }}
       shell: 'bash -ileo pipefail {0}'
       id: upload
       run: |
@@ -51,7 +50,6 @@ runs:
         tar -zcvf content.tar.gz *
 
     - name: Identify workspace ID
-      if: ${{ contains(inputs.BUILD_FOLDER, 'terraform') }}
       shell: 'bash -ileo pipefail {0}'
       id: plan
       run: |
@@ -112,7 +110,6 @@ runs:
 
     - name: Check Run Status
       id: status
-      if: ${{ contains(inputs.BUILD_FOLDER, 'terraform') }}
       shell: 'bash -ileo pipefail {0}'
       run: |
         # Check run result in loop
@@ -188,7 +185,6 @@ runs:
         fi
 
     - name: Exit
-      if: ${{ contains(inputs.BUILD_FOLDER, 'terraform') }}
       shell: 'bash -ileo pipefail {0}'
       run: |
         if [[ "${{ steps.status.outputs.STATUS }}" == "success" ]]; then
