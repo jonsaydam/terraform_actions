@@ -71,14 +71,14 @@ runs:
           | jq -r '.data.id'))
 
         if [ "$WORKSPACE_ID" = "null" ]; then
-          log_info ""
+          echo ""
           log_fatal "Workspace not exist"
           exit 1
         else
-          log_info ""
-          log_info "Workspace Found!"
-          log_info "Workspace Name: ${{ inputs.TF_WORKSPACE }}"
-          log_info "Workspace ID: $WORKSPACE_ID"
+          echo ""
+          echo "Workspace Found!"
+          echo "Workspace Name: ${{ inputs.TF_WORKSPACE }}"
+          echo "Workspace ID: $WORKSPACE_ID"
           echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_OUTPUT
         fi
 
@@ -108,7 +108,7 @@ runs:
         fi
 
         if [ ! -z "$current_state_objects" ]; then
-          log_info "Current State Objects:"
+          echo "Current State Objects:"
           echo $current_state_objects | jq
         else
           log_warning "There is no VM output in the previous state"
@@ -119,25 +119,25 @@ runs:
 
         echo '{ "data": { "type": "configuration-versions", "attributes": { "auto-queue-runs": false }}}' > configversion.json
 
-        log_info ""
-        log_info "Creating configuration version."
+        echo ""
+        echo "Creating configuration version."
         configuration_version_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN }}" \
         --header "Content-Type: application/vnd.api+json" --data @configversion.json "https://${{ inputs.TF_HOSTNAME }}/api/v2/workspaces/${WORKSPACE_ID}/configuration-versions")
 
         # Parse configuration_version_id and upload_url
         config_version_id=$(echo $configuration_version_result | jq -r '.data.id')
         upload_url=$(echo $configuration_version_result | jq -r '.data.attributes."upload-url"')
-        log_info ""
-        log_info "Config Version ID: " $config_version_id
-        log_info "Upload URL: " $upload_url
+        echo ""
+        echo "Config Version ID: " $config_version_id
+        echo "Upload URL: " $upload_url
 
         # Write out run.template.json
         echo '{ "data": { "attributes": { "message": "${{ inputs.TF_RUN_CODE }}", "is-destroy": false }, "type": "runs", "relationships": { "workspace": { "data": { "type": "workspaces", "id": "workspace_id" }}}}}' > run.template.json
 
 
         # Upload configuration
-        log_info ""
-        log_info "Uploading configuration version using content.tar.gz"
+        echo ""
+        echo "Uploading configuration version using content.tar.gz"
         curl -s --header "Content-Type: application/octet-stream" --request PUT --data-binary @"content.tar.gz" "$upload_url"
 
         # Do a run
@@ -149,13 +149,13 @@ runs:
 
         # Parse run_result
         run_id=$(echo $run_result | jq -r '.data.id')
-        log_info ""
-        log_info "Run ID: $run_id"
+        echo ""
+        echo "Run ID: $run_id"
 
         echo "RUN_ID=$run_id" >> $GITHUB_OUTPUT
         echo "TFE_RUN_URL=https://${{ inputs.TF_HOSTNAME }}/app/${{ env.TF_CLOUD_ORGANIZATION }}/workspaces/${{ inputs.TF_WORKSPACE }}/runs/${run_id}" >> $GITHUB_OUTPUT
 
-        log_info "End of Planning Step"
+        echo "End of Planning Step"
 
     - name: Check Run Status
       shell: 'bash -ileo pipefail {0}'
@@ -167,17 +167,17 @@ runs:
         while [ $continue -ne 0 ]; do
           # Sleep
           sleep 60
-          log_info ""
-          log_info "Checking run status"
+          echo ""
+          echo "Checking run status"
 
           # Check the status of run
           check_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN  }}" --header "Content-Type: application/vnd.api+json" https://${{ inputs.TF_HOSTNAME }}/api/v2/runs/${{ steps.plan.outputs.RUN_ID}}?include=plan)
 
           # Parse out the run status and is-confirmable
           run_status=$(echo $check_result | jq -r '.data.attributes.status')
-          log_info "Run Status: " $run_status
+          echo "Run Status: " $run_status
           is_confirmable=$(echo $check_result | jq -r '.data.attributes.actions."is-confirmable"')
-          log_info "Run can be applied: " $is_confirmable
+          echo "Run can be applied: " $is_confirmable
           # Save plan log in some cases
           save_plan="false"
         
@@ -238,32 +238,32 @@ runs:
         # Get the apply log and state file if an apply was done
         if [[ "$applied" == "true" ]]; then
           echo ""
-          log_info "An apply was done."
-          log_info "Will download apply log and state file."
+          echo "An apply was done."
+          echo "Will download apply log and state file."
           # Get run details including apply information
           check_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN  }}" --header "Content-Type: application/vnd.api+json" https://${{ inputs.TF_HOSTNAME }}/api/v2/runs/${{ steps.plan.outputs.RUN_ID }}?include=apply)
         
           ## Get apply ID
           apply_id=$(echo $check_result | jq -r '.included[0].id')
-          log_info ""
-          log_info "Apply ID:" $apply_id
+          echo ""
+          echo "Apply ID:" $apply_id
 
           ## Check apply status periodically in loop
           continue=1
           while [ $continue -ne 0 ]; do
             sleep 60
-            log_info ""
-            log_info "Checking apply status"
+            echo ""
+            echo "Checking apply status"
         
             # Check the apply status
             check_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN  }}" --header "Content-Type: application/vnd.api+json" https://${{ inputs.TF_HOSTNAME }}/api/v2/applies/${apply_id})
             # Parse out the apply status
             apply_status=$(echo $check_result | jq -r '.data.attributes.status')
-            log_info "Apply Status: ${apply_status}"
+            echo "Apply Status: ${apply_status}"
         
             # Decide whether to continue
             if [[ "$apply_status" == "finished" ]]; then
-              log_info "Apply finished."
+              echo "Apply finished."
               echo "OUTPUT1_MESSAGE=Apply completed successfully. Check the run in Terraform Enterprise UI to review run results." >> $GITHUB_OUTPUT
               continue=0
             elif [[ "$apply_status" == "errored" ]]; then
@@ -282,20 +282,20 @@ runs:
 
           # Get apply log URL
           apply_log_url=$(echo $check_result | jq -r '.data.attributes."log-read-url"')
-          log_info ""
-          log_info "Apply Log URL:"
-          log_info "${apply_log_url}"
+          echo ""
+          echo "Apply Log URL:"
+          echo "${apply_log_url}"
 
         #  # Retrieve Apply Log from the URL
         #  # and output to shell and file
-        #  log_info ""
+        #  echo ""
         #  curl -s $apply_log_url | tee ${apply_id}.log
 
           # Get state version ID from after the apply
           state_id=$(echo $check_result | jq -r '.data.relationships."state-versions".data[0].id')
           echo "NEW_STATE_VERSION=$state_id" >> $GITHUB_OUTPUT
-          log_info ""
-          log_info "State ID:" ${state_id}
+          echo ""
+          echo "State ID:" ${state_id}
           # Call API to get information about the state version including its URL and outputs
           state_file_url_result=$(curl -s --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN  }}" "https://${{ inputs.TF_HOSTNAME }}/api/v2/state-versions/${state_id}?include=outputs")
           
@@ -310,14 +310,14 @@ runs:
 
           state_file_url=$(echo $state_file_url_result | jq -r '.data.attributes."hosted-state-download-url"')
           # Get state file URL from the result
-          log_info ""
-          log_info "URL for state file after apply:"
-          log_info ${state_file_url}
+          echo ""
+          echo "URL for state file after apply:"
+          echo ${state_file_url}
           
         #  # Retrieve state file from the URL
         #  # and output to shell and file
-        #  log_info ""
-        #  log_info "State file after the apply:"
+        #  echo ""
+        #  echo "State file after the apply:"
         #  curl -s $state_file_url | tee ${apply_id}-after.tfstate
         fi
 
@@ -327,7 +327,7 @@ runs:
       run: |
         ### PREVIOUS STATE OUTPUT ###
 
-        log_info "Previos State version: ${{ steps.plan.outputs.PREVIOUS_STATE_VERSION }}"
+        echo "Previos State version: ${{ steps.plan.outputs.PREVIOUS_STATE_VERSION }}"
 
         if  [ "${{ steps.plan.outputs.PREVIOUS_STATE_VERSION }}" != null ]; then
           current_state_output=$(curl \
@@ -341,11 +341,11 @@ runs:
           current_state_objects=$(echo "$current_state_output" | jq '.')
       
         else
-          log_info "No current state"
+          echo "No current state"
         fi
       
         if [ ! -z "$current_state_objects" ]; then
-          log_info "Current State Objects:"
+          echo "Current State Objects:"
           echo $current_state_objects | jq
         else
           log_warning "There is no output in the previous state"
@@ -353,7 +353,7 @@ runs:
         
         if  [ ${{ steps.status.outputs.NEW_STATE_VERSION }} != null ]; then
           ### New State Output ###
-          log_info "New State Version: ${{ steps.status.outputs.NEW_STATE_VERSION }}"
+          echo "New State Version: ${{ steps.status.outputs.NEW_STATE_VERSION }}"
           new_state_output=$(curl \
             --silent \
             --header "Authorization: Bearer ${{ inputs.TF_API_TOKEN  }}" \
@@ -365,14 +365,14 @@ runs:
           new_state_objects=$(echo "$new_state_output" | jq '.')
 
           if [ ! -z "$new_state_objects" ]; then
-            log_info "New State Objects:"
+            echo "New State Objects:"
             echo $new_state_objects | jq
           else
             log_warning "There is no output in the new state"
             new_state_objects=[]
           fi
         else
-          log_info "There is no new state version."
+          echo "There is no new state version."
           new_state_objects=$current_state_objects
         fi
 
@@ -381,17 +381,17 @@ runs:
         # ### Delta State Output Objects ###
         # if [ -n "$current_state_objects" ]; then
           
-        #   log_info "Finding Delta Output Objects"
+        #   echo "Finding Delta Output Objects"
         #   delta_state_objects=$(jq -n --argjson current "$current_state_objects" --argjson new "$new_state_objects" '
         #     $new | map(select(. as $n | $current | any(.name == $n.name and .pip == $n.pip and .["private-ip"] == $n["private-ip"]) | not))
         #   ')
         # else
-        #   log_info "There was no previous output objects. Delta Output Objects are new output objects"
+        #   echo "There was no previous output objects. Delta Output Objects are new output objects"
         #   delta_state_objects=$new_state_objects
         # fi
 
         # if [ ! -z "$delta_state_objects" ]; then
-        #   log_info "Delta State Objects:"
+        #   echo "Delta State Objects:"
         #   echo "$delta_state_objects" | jq
         #   delta_state_objects_num=$(echo "$delta_state_objects" | jq 'length')
         #   echo DELTA_STATE_OBJECTS=$delta_state_objects >> $GITHUB_OUTPUT
@@ -402,6 +402,6 @@ runs:
         # fi
 
         # echo DELTA_STATE_OBJECTS_NUM=$delta_state_objects_num >> $GITHUB_OUTPUT
-        # log_info "Number of VM created: $delta_state_objects_num"
+        # echo "Number of VM created: $delta_state_objects_num"
 
 
